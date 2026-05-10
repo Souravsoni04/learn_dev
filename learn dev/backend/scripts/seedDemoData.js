@@ -1,0 +1,319 @@
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import Course from "../models/Course.js";
+import User from "../models/User.js";
+import Enrollment from "../models/Enrollment.js";
+import Payment from "../models/Payment.js";
+import Review from "../models/Review.js";
+
+dotenv.config();
+
+const password = "password123";
+const demoCourseCount = Number(process.env.DEMO_COURSE_COUNT || 120);
+
+const categories = [
+  "Web Development",
+  "Frontend",
+  "Backend",
+  "Data Science",
+  "Cloud",
+  "DevOps",
+  "Mobile",
+  "Cyber Security"
+];
+const levels = ["Beginner", "Intermediate", "Advanced"];
+const instructors = [
+  "Aarav Mehta",
+  "Priya Sharma",
+  "Rohan Verma",
+  "Neha Iyer",
+  "Kabir Khan",
+  "Ananya Rao"
+];
+
+const studentUsers = [
+  "Aditi Singh",
+  "Rahul Kumar",
+  "Sneha Patel",
+  "Vikram Joshi",
+  "Meera Nair",
+  "Arjun Gupta",
+  "Pooja Reddy",
+  "Karan Malhotra",
+  "Nisha Das",
+  "Dev Shah",
+  "Isha Kapoor",
+  "Manav Bansal"
+];
+
+const courseTopics = [
+  "React Project Mastery",
+  "Node API Bootcamp",
+  "MongoDB Essentials",
+  "JavaScript Interview Prep",
+  "Python for Data Analysis",
+  "AWS Deployment Lab",
+  "Docker and CI Basics",
+  "UI Design Systems",
+  "Next.js App Router",
+  "TypeScript Foundations",
+  "Express Security",
+  "MERN Commerce Build"
+];
+
+const connectDB = async () => {
+  if (!process.env.MONGO_URI) {
+    throw new Error("MONGO_URI is missing from .env");
+  }
+
+  const conn = await mongoose.connect(process.env.MONGO_URI);
+  console.log(`MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
+};
+
+const buildMaterials = (index) => [
+  {
+    type: "video",
+    title: "Course introduction",
+    description: "Overview and setup for this demo course.",
+    duration: "08:00",
+    url: "https://ik.imagekit.io/demo/sample-video.mp4",
+    fileId: `demo-video-${index}-intro`
+  },
+  {
+    type: "note",
+    title: "Practice checklist",
+    description: "Short checklist for completing the course project.",
+    duration: "05:00",
+    url: ""
+  },
+  {
+    type: "pdf",
+    title: "Reference guide",
+    description: "Downloadable course reference material.",
+    duration: "03:00",
+    url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+  }
+];
+
+const seedUsers = async () => {
+  const admin = await User.findOne({ email: "admin@test.com" });
+  if (admin) {
+    admin.name = "Demo Admin";
+    admin.password = password;
+    admin.role = "admin";
+    admin.isBlocked = false;
+    await admin.save();
+  } else {
+    await User.create({
+      name: "Demo Admin",
+      email: "admin@test.com",
+      password,
+      role: "admin"
+    });
+  }
+
+  const students = [];
+  for (const [index, name] of studentUsers.entries()) {
+    const email = `student${index + 1}@test.com`;
+    let user = await User.findOne({ email });
+
+    if (user) {
+      user.name = name;
+      user.password = password;
+      user.role = "student";
+      user.isBlocked = index === studentUsers.length - 1;
+      await user.save();
+    } else {
+      user = await User.create({
+        name,
+        email,
+        password,
+        role: "student",
+        isBlocked: index === studentUsers.length - 1
+      });
+    }
+
+    students.push(user);
+  }
+
+  return students;
+};
+
+const seedCourses = async () => {
+  const courses = [];
+
+  for (let index = 0; index < demoCourseCount; index += 1) {
+    const number = String(index + 1).padStart(3, "0");
+    const topic = courseTopics[index % courseTopics.length];
+    const category = categories[index % categories.length];
+    const level = levels[index % levels.length];
+    const instructorName = instructors[index % instructors.length];
+    const price = index % 5 === 0 ? 0 : 299 + (index % 8) * 100;
+
+    const payload = {
+      title: `Demo ${topic} ${number}`,
+      subtitle: `${level} ${category} course for admin catalog testing`,
+      description: `Demo course ${number} with realistic data for testing large catalog search, filters, edits, enrollments, and payments.`,
+      level,
+      category,
+      duration: `${4 + (index % 16)}h`,
+      lessons: 8 + (index % 22),
+      thumbnail: `https://picsum.photos/seed/smart-pathsala-${number}/800/450`,
+      price,
+      createdBy: "Demo Seed",
+      instructor: {
+        name: instructorName,
+        bio: `${instructorName} teaches practical ${category.toLowerCase()} skills.`,
+        avatar: `https://i.pravatar.cc/160?img=${(index % 60) + 1}`,
+        socials: {
+          github: "https://github.com/example",
+          linkedin: "https://linkedin.com/in/example",
+          youtube: "https://youtube.com/@example"
+        }
+      },
+      materials: buildMaterials(index + 1),
+      resources: [
+        { title: "Starter files", url: "https://github.com/example/starter" },
+        { title: "Documentation", url: "https://developer.mozilla.org/" }
+      ],
+      notes: [
+        {
+          title: "Admin testing note",
+          content: "This course was generated by scripts/seedDemoData.js.",
+          fileUrl: ""
+        }
+      ]
+    };
+
+    const course = await Course.findOneAndUpdate(
+      { title: payload.title },
+      { $set: payload },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    courses.push(course);
+  }
+
+  for (let index = 0; index < courses.length; index += 1) {
+    const relatedCourses = [
+      courses[(index + 1) % courses.length]._id,
+      courses[(index + 7) % courses.length]._id
+    ];
+    await Course.updateOne({ _id: courses[index]._id }, { $set: { relatedCourses } });
+  }
+
+  return courses;
+};
+
+const seedActivity = async (students, courses) => {
+  let enrollmentCount = 0;
+  let paymentCount = 0;
+  let reviewCount = 0;
+
+  for (const [studentIndex, student] of students.entries()) {
+    const coursesForStudent = courses.slice(studentIndex * 3, studentIndex * 3 + 8);
+
+    for (const [courseIndex, course] of coursesForStudent.entries()) {
+      const paid = courseIndex % 4 !== 3;
+      const amount = paid ? course.price || 0 : 0;
+      const completedCount = paid ? Math.min(course.materials.length, courseIndex + 1) : 0;
+
+      const enrollment = await Enrollment.findOneAndUpdate(
+        { student: student._id, course: course._id },
+        {
+          $set: {
+            paymentStatus: paid ? "paid" : "pending",
+            amount,
+            currency: "INR",
+            orderId: `demo_order_${studentIndex + 1}_${courseIndex + 1}`,
+            paymentId: paid ? `demo_payment_${studentIndex + 1}_${courseIndex + 1}` : "",
+            completedMaterials: course.materials.slice(0, completedCount).map((material) => material.title),
+            progress: paid ? Math.min(100, 20 + courseIndex * 10) : 0
+          }
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+      enrollmentCount += 1;
+
+      await Payment.findOneAndUpdate(
+        {
+          student: student._id,
+          course: course._id,
+          orderId: `demo_order_${studentIndex + 1}_${courseIndex + 1}`
+        },
+        {
+          $set: {
+            enrollment: enrollment._id,
+            paymentStatus: paid ? "paid" : "pending",
+            amount,
+            currency: "INR",
+            paymentId: paid ? `demo_payment_${studentIndex + 1}_${courseIndex + 1}` : "",
+            gateway: "demo"
+          }
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+      paymentCount += 1;
+
+      if (paid && courseIndex < 5) {
+        await Review.findOneAndUpdate(
+          { student: student._id, course: course._id },
+          {
+            $set: {
+              rating: 4 + ((studentIndex + courseIndex) % 2),
+              comment: "Demo review for admin dashboard testing."
+            }
+          },
+          { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+        reviewCount += 1;
+      }
+    }
+  }
+
+  for (const course of courses) {
+    const paidEnrollments = await Enrollment.countDocuments({ course: course._id, paymentStatus: "paid" });
+    const reviews = await Review.find({ course: course._id }).select("rating");
+    const averageRating = reviews.length
+      ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
+      : 0;
+
+    await Course.updateOne(
+      { _id: course._id },
+      {
+        $set: {
+          enrolledCount: paidEnrollments,
+          reviewCount: reviews.length,
+          averageRating
+        }
+      }
+    );
+  }
+
+  return { enrollmentCount, paymentCount, reviewCount };
+};
+
+const run = async () => {
+  try {
+    await connectDB();
+
+    const students = await seedUsers();
+    const courses = await seedCourses();
+    const activity = await seedActivity(students, courses);
+
+    console.log("Demo seed complete");
+    console.log(`Admin: admin@test.com / ${password}`);
+    console.log(`Students: student1@test.com through student${students.length}@test.com / ${password}`);
+    console.log(`Courses upserted: ${courses.length}`);
+    console.log(`Enrollments upserted: ${activity.enrollmentCount}`);
+    console.log(`Payments upserted: ${activity.paymentCount}`);
+    console.log(`Reviews upserted: ${activity.reviewCount}`);
+  } catch (error) {
+    console.error("Demo seed failed:", error.message);
+    process.exitCode = 1;
+  } finally {
+    await mongoose.disconnect();
+  }
+};
+
+run();
